@@ -109,7 +109,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
 ])
 
 # ────────────────────────────────────────────────
-# Tab 1: Course Setup – load/save named courses
+# Tab 1: Course Setup – fixed loading + confirm overwrite
 # ────────────────────────────────────────────────
 with tab1:
     st.header("Course Setup")
@@ -118,7 +118,7 @@ with tab1:
 
     col1, col2 = st.columns([3, 1])
     with col1:
-        selected_course = st.selectbox("Load saved course", ["New Course"] + course_names)
+        selected_course = st.selectbox("Load saved course", ["New Course"] + course_names, key="course_select")
     with col2:
         if selected_course != "New Course" and st.button("Delete this course"):
             delete_course(selected_course)
@@ -131,11 +131,13 @@ with tab1:
         'Stroke Index': list(range(1, 19))
     })
 
+    # Load selected course (runs every rerun when selection changes)
     if selected_course == "New Course":
         current_df = st.session_state.get('course_temp', default_course.copy())
     else:
         loaded = load_course(selected_course)
         current_df = loaded if loaded is not None else default_course.copy()
+        st.session_state.course_temp = current_df.copy()  # sync temp for editing
 
     st.caption("Arrow keys to move • Enter to go down")
 
@@ -159,25 +161,30 @@ with tab1:
         update_mode=GridUpdateMode.VALUE_CHANGED,
         height=680,
         fit_columns_on_grid_load=True,
-        key="course_grid"
+        key=f"course_grid_{selected_course}"  # unique key per course to force refresh
     )
 
-    # Always get the current data from the grid
     grid_data = pd.DataFrame(response['data'])
 
     col_save, col_name = st.columns([3, 2])
     with col_save:
         if st.button("💾 Save Course (temporary)", width="stretch"):
             st.session_state.course_temp = grid_data.copy()
-            st.session_state.course = grid_data.copy()  # also update active course
+            st.session_state.course = grid_data.copy()
             st.success("Course saved temporarily")
 
     with col_name:
         course_name = st.text_input("Course Name (to save permanently)", value=selected_course if selected_course != "New Course" else "")
-        if st.button("Save as Named Course", width="stretch") and course_name.strip():
-            save_course(course_name.strip(), grid_data['Par'].tolist(), grid_data['Stroke Index'].tolist())
-            st.success(f"Saved permanently as '{course_name}'")
-            st.rerun()
+        if st.button("Save / Overwrite Course", width="stretch") and course_name.strip():
+            with st.popover("Confirm overwrite"):
+                st.write(f"Save changes to '{course_name}'?")
+                col1, col2 = st.columns(2)
+                if col1.button("Yes – Overwrite"):
+                    save_course(course_name.strip(), grid_data['Par'].tolist(), grid_data['Stroke Index'].tolist())
+                    st.success(f"Course '{course_name}' saved/overwritten")
+                    st.rerun()
+                if col2.button("Cancel"):
+                    st.rerun()
 
 # ────────────────────────────────────────────────
 # Tab 2: Manage Courses
