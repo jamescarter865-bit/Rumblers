@@ -126,10 +126,10 @@ with tab1:
         st.rerun()
 
 # ────────────────────────────────────────────────
-# Tab 2: Manage Players (Database)
+# Tab 2: Manage Players
 # ────────────────────────────────────────────────
 with tab2:
-    st.header("Manage Players")
+    st.header("Manage Players (Database)")
 
     df_players = load_players()
 
@@ -174,7 +174,7 @@ with tab2:
             st.rerun()
 
 # ────────────────────────────────────────────────
-# Tab 3: Competition Setup – with edit teams, override handicap, remove players + confirmation
+# Tab 3: Competition Setup
 # ────────────────────────────────────────────────
 with tab3:
     st.header("Competition Setup")
@@ -184,7 +184,6 @@ with tab3:
 
     players_db = load_players()
 
-    # Add from database
     st.subheader("Add Players")
     selected = st.multiselect("From database", players_db['Name'].tolist())
     team_input = st.text_input("Team name")
@@ -200,30 +199,27 @@ with tab3:
         st.success("Added")
         st.rerun()
 
-    # Current players table
     if st.session_state.golfers:
         df_comp = pd.DataFrame(st.session_state.golfers)
 
-        st.subheader("Current Players in Competition")
+        st.subheader("Current Players")
 
-        # Editable table – scores column is hidden by not configuring it
         edited_comp = st.data_editor(
             df_comp,
             column_config={
                 "Name": st.column_config.TextColumn("Name", disabled=True),
                 "Handicap": st.column_config.NumberColumn("Handicap", min_value=0, max_value=54),
                 "Team": st.column_config.TextColumn("Team"),
-                # scores is automatically hidden (no config provided)
+                # scores is hidden by omission
             },
             hide_index=True,
             use_container_width=True,
             key="comp_editor"
         )
 
-        # Save with confirmation popover
         if st.button("Save Team / Handicap Changes"):
-            with st.popover("Confirm changes", help="Check carefully — these will update the competition"):
-                st.write("Are you sure these changes are correct?")
+            with st.popover("Confirm changes"):
+                st.write("Are you sure these edits are correct?")
                 col1, col2 = st.columns(2)
                 if col1.button("Yes – Save"):
                     st.session_state.golfers = edited_comp.to_dict('records')
@@ -232,33 +228,25 @@ with tab3:
                 if col2.button("Cancel"):
                     st.rerun()
 
-        # Remove players
-        remove_names = st.multiselect(
-            "Remove players from competition",
-            df_comp['Name'].tolist(),
-            key="remove_select"
-        )
+        remove_names = st.multiselect("Remove players", df_comp['Name'].tolist(), key="remove_select")
         if st.button("Remove selected players"):
-            st.session_state.golfers = [
-                g for g in st.session_state.golfers if g['Name'] not in remove_names
-            ]
+            st.session_state.golfers = [g for g in st.session_state.golfers if g['Name'] not in remove_names]
             st.success(f"Removed {len(remove_names)} player(s)")
             st.rerun()
 
 # ────────────────────────────────────────────────
-# Tab 4: Enter Scores with AgGrid
+# Tab 4: Enter Scores
 # ────────────────────────────────────────────────
 with tab4:
     st.header("Enter Scores")
 
     if not st.session_state.get('golfers'):
-        st.info("No players in competition yet")
+        st.info("No players in competition")
     else:
         teams = {}
         for g in st.session_state.golfers:
             teams.setdefault(g['Team'], []).append(g)
 
-        # Status
         status_rows = []
         for t, ms in teams.items():
             r = {'Team': t}
@@ -323,7 +311,7 @@ with tab4:
             st.markdown("---")
 
 # ────────────────────────────────────────────────
-# Calculation function
+# Calculation function – FIXED Irish Rumble + players list
 # ────────────────────────────────────────────────
 def compute_results():
     if 'course' not in st.session_state:
@@ -334,6 +322,7 @@ def compute_results():
     ind = []
     det = {}
 
+    # Individual points
     for g in st.session_state.golfers:
         if 'scores' not in g or not g['scores']:
             continue
@@ -378,31 +367,39 @@ def compute_results():
         ascending=[False]*5
     )
 
-    # Team Irish Rumble
+    # Team Irish Rumble – with all 4 on hole 18
     team_dict = {}
     for g in st.session_state.golfers:
         if 'scores' not in g:
             continue
         t = g['Team']
-        team_dict.setdefault(t, []).append(
-            [stableford_points(g['scores'][h], course.iloc[h]['Par'], strokes_on_hole(g['Handicap'], course.iloc[h]['Stroke Index']))
-             for h in range(18)]
-        )
+        team_dict.setdefault(t, []).append({
+            'points': [stableford_points(g['scores'][h], course.iloc[h]['Par'], strokes_on_hole(g['Handicap'], course.iloc[h]['Stroke Index']))
+                       for h in range(18)],
+            'name': g['Name']
+        })
 
     team_res = []
-    for t, pls in team_dict.items():
-        if len(pls) < 4:
+    for t, players in team_dict.items():
+        if len(players) < 4:
             continue
+
         tpts = []
         for h in range(18):
-            hs = sorted([p[h] for p in pls], reverse=True)
-            if h < 6: tpts.append(hs[0])
-            elif h < 12: tpts.append(sum(hs[:2]))
-            else: tpts.append(sum(hs[:3]))  # best 3 on 13-18 (change to [:4] for hole 18 if needed)
+            hole_scores = sorted([p['points'][h] for p in players], reverse=True)
+            if h < 6:
+                tpts.append(hole_scores[0])           # best 1
+            elif h < 12:
+                tpts.append(sum(hole_scores[:2]))     # best 2
+            elif h == 17:  # hole 18
+                tpts.append(sum(hole_scores[:4]))     # all 4
+            else:
+                tpts.append(sum(hole_scores[:3]))     # best 3 on holes 13-17
 
         tot = sum(tpts)
         team_res.append({
             'Team': t,
+            'Players': ", ".join([p['name'] for p in players]),
             'Total Points': tot,
             'Back 9': sum(tpts[9:18]),
             'Back 6': sum(tpts[12:18]),
@@ -431,7 +428,7 @@ with tab5:
         st.info("Enter scores and calculate")
 
 with tab6:
-    st.header("Team Leaderboard")
+    st.header("Team Leaderboard (Irish Rumble)")
     if 'team_df' in st.session_state and st.session_state.team_df is not None:
         st.dataframe(st.session_state.team_df, use_container_width=True, hide_index=True)
     else:
@@ -454,8 +451,8 @@ with tab7:
     else:
         st.info("Calculate results first")
 
-# Reset competition
-if st.button("Reset Competition (keeps player database)"):
+# Reset
+if st.button("Reset Competition (keeps player DB)"):
     for k in ['golfers', 'ind_df', 'team_df', 'details']:
         st.session_state.pop(k, None)
     st.rerun()
