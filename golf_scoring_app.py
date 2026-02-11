@@ -162,19 +162,19 @@ with tab1:
         key="course_grid"
     )
 
-    # Always get the current grid data
+    # Always get the current data from the grid
     grid_data = pd.DataFrame(response['data'])
 
     col_save, col_name = st.columns([3, 2])
     with col_save:
-        if st.button("💾 Save Course (temporary)", use_container_width=True):
+        if st.button("💾 Save Course (temporary)", width="stretch"):
             st.session_state.course_temp = grid_data.copy()
             st.session_state.course = grid_data.copy()  # also update active course
             st.success("Course saved temporarily")
 
     with col_name:
         course_name = st.text_input("Course Name (to save permanently)", value=selected_course if selected_course != "New Course" else "")
-        if st.button("Save as Named Course") and course_name.strip():
+        if st.button("Save as Named Course", width="stretch") and course_name.strip():
             save_course(course_name.strip(), grid_data['Par'].tolist(), grid_data['Stroke Index'].tolist())
             st.success(f"Saved permanently as '{course_name}'")
             st.rerun()
@@ -424,7 +424,6 @@ def compute_results():
             'Back 1': b1
         })
 
-        # Store data for scorecard
         det[g['Name']] = {
             'Points per Hole': pts,
             'Breakdowns': {'Total': tot, 'Back 9': b9, 'Back 6': b6, 'Back 3': b3, 'Back 1': b1},
