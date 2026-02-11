@@ -131,13 +131,13 @@ with tab1:
         'Stroke Index': list(range(1, 19))
     })
 
-    # Load selected course (runs every rerun when selection changes)
+    # Load selected course (runs every time selection changes)
     if selected_course == "New Course":
         current_df = st.session_state.get('course_temp', default_course.copy())
     else:
         loaded = load_course(selected_course)
         current_df = loaded if loaded is not None else default_course.copy()
-        st.session_state.course_temp = current_df.copy()  # sync temp for editing
+        st.session_state.course_temp = current_df.copy()  # sync for editing
 
     st.caption("Arrow keys to move • Enter to go down")
 
@@ -161,7 +161,7 @@ with tab1:
         update_mode=GridUpdateMode.VALUE_CHANGED,
         height=680,
         fit_columns_on_grid_load=True,
-        key=f"course_grid_{selected_course}"  # unique key per course to force refresh
+        key=f"course_grid_{selected_course}"  # unique key per course
     )
 
     grid_data = pd.DataFrame(response['data'])
@@ -177,7 +177,7 @@ with tab1:
         course_name = st.text_input("Course Name (to save permanently)", value=selected_course if selected_course != "New Course" else "")
         if st.button("Save / Overwrite Course", width="stretch") and course_name.strip():
             with st.popover("Confirm overwrite"):
-                st.write(f"Save changes to '{course_name}'?")
+                st.write(f"Overwrite '{course_name}' with current changes?")
                 col1, col2 = st.columns(2)
                 if col1.button("Yes – Overwrite"):
                     save_course(course_name.strip(), grid_data['Par'].tolist(), grid_data['Stroke Index'].tolist())
@@ -227,7 +227,7 @@ with tab3:
                 "Delete": st.column_config.CheckboxColumn("Delete?", default=False)
             },
             hide_index=True,
-            use_container_width=True
+            width="stretch"
         )
 
         if st.button("Save Changes"):
@@ -291,7 +291,7 @@ with tab4:
                 "Team": st.column_config.TextColumn("Team"),
             },
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
             key="comp_editor"
         )
 
@@ -335,7 +335,7 @@ with tab5:
 
         if status_rows:
             st.subheader("Entry Status")
-            st.dataframe(pd.DataFrame(status_rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(status_rows), width="stretch", hide_index=True)
 
         for team, members in teams.items():
             if len(members) != 4:
@@ -503,14 +503,14 @@ with tab6:
         st.session_state.ind_df, st.session_state.team_df, st.session_state.details = compute_results()
         st.success("Results updated")
     if 'ind_df' in st.session_state and st.session_state.ind_df is not None:
-        st.dataframe(st.session_state.ind_df, use_container_width=True, hide_index=True)
+        st.dataframe(st.session_state.ind_df, width="stretch", hide_index=True)
     else:
         st.info("Enter scores and calculate")
 
 with tab7:
     st.header("Team Leaderboard (Irish Rumble)")
     if 'team_df' in st.session_state and st.session_state.team_df is not None:
-        st.dataframe(st.session_state.team_df, use_container_width=True, hide_index=True)
+        st.dataframe(st.session_state.team_df, width="stretch", hide_index=True)
     else:
         st.info("Calculate results above")
 
@@ -571,11 +571,11 @@ with tab8:
                 }])
 
                 full_scorecard = pd.concat([df_score, totals_row], ignore_index=True)
-                st.dataframe(full_scorecard, use_container_width=True, hide_index=True)
+                st.dataframe(full_scorecard, width="stretch", hide_index=True)
 
             # Breakdowns
             st.subheader("Points Breakdown")
-            st.dataframe(pd.Series(d['Breakdowns']).to_frame('Points'))
+            st.dataframe(pd.Series(d['Breakdowns']).to_frame('Points'), width="stretch")
     else:
         st.info("Calculate results first")
 
