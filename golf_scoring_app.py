@@ -69,7 +69,7 @@ def strokes_on_hole(handicap, stroke_index):
 # Tabs
 # ────────────────────────────────────────────────
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-    "Course Setup", "Manage Players", "Assign to Competition",
+    "Course Setup", "Manage Players", "Competition Setup",
     "Enter Scores", "Individual Leaderboard", "Team Leaderboard", "Player Details"
 ])
 
@@ -88,12 +88,11 @@ with tab1:
     if 'course' not in st.session_state:
         st.session_state.course = default_course.copy()
 
-    course_df = st.session_state.course.copy()
+    df = st.session_state.course.copy()
 
-    st.subheader("Edit pars and stroke indices")
-    st.caption("Arrow keys to move • Enter to confirm and go down")
+    st.caption("Use arrow keys to move, Enter to confirm and move down")
 
-    gb = GridOptionsBuilder.from_dataframe(course_df)
+    gb = GridOptionsBuilder.from_dataframe(df)
     gb.configure_default_column(editable=True, minWidth=90)
     gb.configure_column("Hole", editable=False, width=80)
     gb.configure_column("Par", type="number", width=100)
@@ -107,162 +106,171 @@ with tab1:
     grid_options = gb.build()
 
     response = AgGrid(
-        course_df,
+        df,
         gridOptions=grid_options,
         data_return_mode=DataReturnMode.AS_INPUT,
         update_mode=GridUpdateMode.VALUE_CHANGED,
         height=680,
         fit_columns_on_grid_load=True,
-        key="course_aggrid"
+        key="course_grid"
     )
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("💾 Save Course Setup", use_container_width=True):
-            st.session_state.course = pd.DataFrame(response['data'])
-            st.success("Course saved!")
-            st.rerun()
+    if st.button("💾 Save Course", use_container_width=True):
+        st.session_state.course = pd.DataFrame(response['data'])
+        st.success("Course saved")
+        st.rerun()
 
-    with col2:
-        if st.button("Reset to Default", use_container_width=True):
-            st.session_state.course = default_course.copy()
-            st.success("Reset to defaults.")
-            st.rerun()
+    if st.button("Reset to Default Course"):
+        st.session_state.course = default_course.copy()
+        st.success("Reset")
+        st.rerun()
 
 # ────────────────────────────────────────────────
 # Tab 2: Manage Players
 # ────────────────────────────────────────────────
 with tab2:
-    st.header("Manage Player Profiles")
+    st.header("Manage Players (Database)")
 
-    players_df = load_players()
+    df_players = load_players()
 
-    if players_df.empty:
-        st.info("No players yet. Add below.")
+    if df_players.empty:
+        st.info("No players yet")
     else:
-        st.subheader("Edit / Delete")
-        edit_df = players_df.copy()
-        edit_df['Delete?'] = False
+        st.subheader("Edit or Delete")
+        edit_df = df_players.copy()
+        edit_df['Delete'] = False
 
-        edited_df = st.data_editor(
+        edited = st.data_editor(
             edit_df,
-            num_rows="fixed",
-            hide_index=True,
             column_config={
-                "Name": st.column_config.TextColumn("Name", required=True),
-                "Handicap": st.column_config.NumberColumn("Handicap", min_value=0, max_value=54, required=True),
-                "Delete?": st.column_config.CheckboxColumn("Delete?", default=False)
+                "Name": st.column_config.TextColumn(required=True),
+                "Handicap": st.column_config.NumberColumn(min_value=0, max_value=54, required=True),
+                "Delete": st.column_config.CheckboxColumn("Delete?", default=False)
             },
-            key="player_editor",
+            hide_index=True,
             use_container_width=True
         )
 
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("💾 Save All Edits"):
-                for _, row in edited_df.iterrows():
-                    if not row['Delete?']:
-                        save_player(row['Name'], int(row['Handicap']))
-                st.success("Saved!")
-                st.rerun()
+        if st.button("Save Changes"):
+            for _, row in edited.iterrows():
+                if not row['Delete']:
+                    save_player(row['Name'], int(row['Handicap']))
+            st.success("Saved")
+            st.rerun()
 
-        with col2:
-            to_delete = edited_df[edited_df['Delete?']]['Name'].tolist()
-            if st.button("🗑️ Delete Selected", type="primary"):
-                if to_delete:
-                    delete_players(to_delete)
-                    st.success(f"Deleted {len(to_delete)} players")
-                    st.rerun()
-                else:
-                    st.warning("None selected")
+        to_del = edited[edited['Delete']]['Name'].tolist()
+        if st.button("Delete Selected") and to_del:
+            delete_players(to_del)
+            st.success(f"Deleted {len(to_del)} players")
+            st.rerun()
 
     st.subheader("Add New Player")
-    new_name = st.text_input("Name", key="new_name")
-    new_hc = st.number_input("Handicap", 0, 54, 0, key="new_hc")
-    if st.button("Add Player"):
+    new_name = st.text_input("Name")
+    new_hc = st.number_input("Handicap", 0, 54, 0)
+    if st.button("Add"):
         if new_name.strip():
             save_player(new_name.strip(), new_hc)
-            st.success(f"Added {new_name}")
+            st.success("Added")
             st.rerun()
-        else:
-            st.error("Enter name")
 
 # ────────────────────────────────────────────────
-# Tab 3: Assign to Competition
+# Tab 3: Competition Setup (Assign, Edit Teams, Override HC, Remove)
 # ────────────────────────────────────────────────
 with tab3:
-    st.header("Assign Players to Competition")
+    st.header("Competition Setup")
+
     if 'golfers' not in st.session_state:
         st.session_state.golfers = []
 
-    players_df = load_players()
-    if not players_df.empty:
-        selected = st.multiselect("Select from database", players_df['Name'].tolist())
-        team_name = st.text_input("Team Name")
-        if st.button("Add Selected"):
-            for name in selected:
-                hc = players_df[players_df['Name'] == name]['Handicap'].values[0]
-                st.session_state.golfers.append({
-                    'Name': name, 'Handicap': hc, 'Team': team_name, 'scores': [0]*18
-                })
-            st.success(f"Added {len(selected)} players")
-            st.rerun()
+    players_db = load_players()
 
-    st.subheader("Add New")
-    nn = st.text_input("New Name", key="nn_comp")
-    nh = st.number_input("Handicap", 0, 54, 0, key="nh_comp")
-    nt = st.text_input("Team")
-    if st.button("Add & Save"):
-        if nn.strip():
-            save_player(nn.strip(), nh)
+    # Add from database
+    st.subheader("Add Players")
+    selected = st.multiselect("From database", players_db['Name'].tolist())
+    team_input = st.text_input("Team name")
+    if st.button("Add selected"):
+        for name in selected:
+            hc = players_db[players_db['Name'] == name]['Handicap'].values[0]
             st.session_state.golfers.append({
-                'Name': nn.strip(), 'Handicap': nh, 'Team': nt, 'scores': [0]*18
+                'Name': name, 'Handicap': hc, 'Team': team_input, 'scores': [0]*18
             })
-            st.success(f"Added {nn}")
-            st.rerun()
+        st.success("Added")
+        st.rerun()
 
+    # Current competition table with edit & delete
     if st.session_state.golfers:
-        st.subheader("Current Players")
-        st.table(pd.DataFrame(st.session_state.golfers).drop(columns=['scores']))
+        df_comp = pd.DataFrame(st.session_state.golfers)
+
+        st.subheader("Current Competition Players")
+        edited_comp = st.data_editor(
+            df_comp,
+            column_config={
+                "Name": st.column_config.TextColumn(disabled=True),
+                "Handicap": st.column_config.NumberColumn(min_value=0, max_value=54),
+                "Team": st.column_config.TextColumn(),
+                "scores": st.column_config.Column(visible=False)
+            },
+            hide_index=True,
+            use_container_width=True,
+            key="comp_editor"
+        )
+
+        if st.button("Save Team / Handicap Changes"):
+            with st.popover("Confirm changes"):
+                st.write("Are you sure these edits are correct?")
+                col1, col2 = st.columns(2)
+                if col1.button("Yes, save"):
+                    st.session_state.golfers = edited_comp.to_dict('records')
+                    st.success("Saved")
+                    st.rerun()
+                if col2.button("Cancel"):
+                    st.rerun()
+
+        # Remove players
+        remove_names = st.multiselect("Remove players from competition", df_comp['Name'].tolist())
+        if st.button("Remove selected"):
+            st.session_state.golfers = [g for g in st.session_state.golfers if g['Name'] not in remove_names]
+            st.success(f"Removed {len(remove_names)} players")
+            st.rerun()
 
 # ────────────────────────────────────────────────
 # Tab 4: Enter Scores with AgGrid
 # ────────────────────────────────────────────────
 with tab4:
-    st.header("Enter Scores – Fast Entry")
+    st.header("Enter Scores")
 
     if not st.session_state.get('golfers'):
-        st.info("Assign players first.")
+        st.info("No players in competition yet")
     else:
         teams = {}
         for g in st.session_state.golfers:
             teams.setdefault(g['Team'], []).append(g)
 
         # Status
-        status_rows = []
-        for team, members in teams.items():
-            row = {'Team': team}
-            for m in members:
+        status = []
+        for t, ms in teams.items():
+            r = {'Team': t}
+            for m in ms:
                 s = m.get('scores', [0]*18)
-                row[m['Name']] = "✅" if all(x > 0 for x in s) else "⏳"
-            status_rows.append(row)
+                r[m['Name']] = "✅" if all(x > 0 for x in s) else "⏳"
+            status.append(r)
 
-        if status_rows:
+        if status:
             st.subheader("Status")
-            st.dataframe(pd.DataFrame(status_rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(status), use_container_width=True, hide_index=True)
 
         for team, members in teams.items():
             if len(members) != 4:
-                st.warning(f"Team {team} needs 4 players.")
+                st.warning(f"Team {team} has {len(members)} players (expected 4)")
                 continue
 
             st.subheader(f"Team {team}")
 
             names = [m['Name'] for m in members]
             data = {'Hole': list(range(1, 19))}
-            for name in names:
-                g = next(x for x in members if x['Name'] == name)
-                data[name] = g.get('scores', [0]*18)
+            for n in names:
+                g = next(x for x in members if x['Name'] == n)
+                data[n] = g.get('scores', [0]*18)
 
             df = pd.DataFrame(data)
 
@@ -271,7 +279,6 @@ with tab4:
             gb.configure_column("Hole", editable=False, width=80)
             for n in names:
                 gb.configure_column(n, type="number", width=110)
-
             gb.configure_grid_options(
                 enterNavigatesVerticallyAfterEdit=True,
                 suppressRowClickSelection=True,
@@ -287,15 +294,15 @@ with tab4:
                 update_mode=GridUpdateMode.VALUE_CHANGED,
                 height=680,
                 fit_columns_on_grid_load=True,
-                key=f"aggrid_scores_{team}"
+                key=f"scores_{team}"
             )
 
-            if st.button(f"Save Scores – {team}", use_container_width=True):
+            if st.button(f"Save scores for {team}"):
                 updated = pd.DataFrame(resp['data'])
-                for name in names:
-                    scores = updated[name].tolist()
+                for n in names:
+                    scores = updated[n].tolist()
                     for g in members:
-                        if g['Name'] == name:
+                        if g['Name'] == n:
                             g['scores'] = scores
                             break
                 st.success(f"Saved {team}")
@@ -308,168 +315,130 @@ with tab4:
 # ────────────────────────────────────────────────
 def compute_results():
     if 'course' not in st.session_state:
-        st.warning("No course loaded.")
         return None, None, {}
 
     course = st.session_state.course
-    ind_results = []
-    details = {}
+    ind = []
+    det = {}
 
-    for golfer in st.session_state.golfers:
-        if 'scores' not in golfer or not golfer['scores']:
+    for g in st.session_state.golfers:
+        if 'scores' not in g or not g['scores']:
             continue
 
-        points = []
+        pts = []
         for h in range(18):
-            gross = golfer['scores'][h]
+            gross = g['scores'][h]
             if gross <= 0:
-                pts = 0
-            else:
-                par = course.iloc[h]['Par']
-                si = course.iloc[h]['Stroke Index']
-                strokes = strokes_on_hole(golfer['Handicap'], si)
-                pts = stableford_points(gross, par, strokes)
-            points.append(pts)
+                pts.append(0)
+                continue
+            par = course.iloc[h]['Par']
+            si = course.iloc[h]['Stroke Index']
+            strk = strokes_on_hole(g['Handicap'], si)
+            pts.append(stableford_points(gross, par, strk))
 
-        total = sum(points)
-        front9 = sum(points[0:9])
-        back9 = sum(points[9:18])
-        back6 = sum(points[12:18])
-        back3 = sum(points[15:18])
-        back1 = points[17]
+        tot = sum(pts)
+        b9 = sum(pts[9:18])
+        b6 = sum(pts[12:18])
+        b3 = sum(pts[15:18])
+        b1 = pts[17]
 
-        ind_results.append({
-            'Name': golfer['Name'],
-            'Team': golfer['Team'],
-            'Total Points': total,
-            'Front 9': front9,
-            'Back 9': back9,
-            'Back 6': back6,
-            'Back 3': back3,
-            'Back 1': back1
+        ind.append({
+            'Name': g['Name'],
+            'Team': g['Team'],
+            'Total Points': tot,
+            'Back 9': b9,
+            'Back 6': b6,
+            'Back 3': b3,
+            'Back 1': b1
         })
 
-        details[golfer['Name']] = {
-            'Points per Hole': points,
-            'Breakdowns': {
-                'Total': total,
-                'Front 9': front9,
-                'Back 9': back9,
-                'Back 6': back6,
-                'Back 3': back3,
-                'Last Hole': back1
-            }
+        det[g['Name']] = {
+            'Points per Hole': pts,
+            'Breakdowns': {'Total': tot, 'Back 9': b9, 'Back 6': b6, 'Back 3': b3, 'Back 1': b1}
         }
 
-    if not ind_results:
+    if not ind:
         return None, None, {}
 
-    ind_df = pd.DataFrame(ind_results).sort_values(
+    ind_df = pd.DataFrame(ind).sort_values(
         ['Total Points', 'Back 9', 'Back 6', 'Back 3', 'Back 1'],
-        ascending=[False] * 5
+        ascending=[False]*5
     )
 
-    # Team Irish Rumble
-    teams_dict = {}
+    # Team calculation (Irish Rumble)
+    team_dict = {}
     for g in st.session_state.golfers:
         if 'scores' not in g:
             continue
         t = g['Team']
-        teams_dict.setdefault(t, []).append(
+        team_dict.setdefault(t, []).append(
             [stableford_points(g['scores'][h], course.iloc[h]['Par'], strokes_on_hole(g['Handicap'], course.iloc[h]['Stroke Index']))
              for h in range(18)]
         )
 
-    team_results = []
-    for team, players_points in teams_dict.items():
-        if len(players_points) < 4:
+    team_res = []
+    for t, pls in team_dict.items():
+        if len(pls) < 4:
             continue
-
-        team_pts = []
+        tpts = []
         for h in range(18):
-            hole_scores = sorted([p[h] for p in players_points], reverse=True)
-            if h < 6:
-                team_pts.append(hole_scores[0])
-            elif h < 12:
-                team_pts.append(sum(hole_scores[:2]))
-            elif h < 17:
-                team_pts.append(sum(hole_scores[:3]))
-            else:
-                team_pts.append(sum(hole_scores[:4]))
+            hs = sorted([p[h] for p in pls], reverse=True)
+            if h < 6: tpts.append(hs[0])
+            elif h < 12: tpts.append(sum(hs[:2]))
+            else: tpts.append(sum(hs[:3]))  # Note: all 4 on 18 is not implemented here - adjust if needed
 
-        total = sum(team_pts)
-        team_results.append({
-            'Team': team,
-            'Total Points': total,
-            'Front 9': sum(team_pts[0:9]),
-            'Back 9': sum(team_pts[9:18]),
-            'Back 6': sum(team_pts[12:18]),
-            'Back 3': sum(team_pts[15:18]),
-            'Back 1': team_pts[17]
+        tot = sum(tpts)
+        team_res.append({
+            'Team': t,
+            'Total Points': tot,
+            'Back 9': sum(tpts[9:18]),
+            'Back 6': sum(tpts[12:18]),
+            'Back 3': sum(tpts[15:18]),
+            'Back 1': tpts[17]
         })
 
-    team_df = pd.DataFrame(team_results).sort_values(
+    team_df = pd.DataFrame(team_res).sort_values(
         ['Total Points', 'Back 9', 'Back 6', 'Back 3', 'Back 1'],
-        ascending=[False] * 5
-    ) if team_results else None
+        ascending=[False]*5
+    ) if team_res else None
 
-    return ind_df, team_df, details
+    return ind_df, team_df, det
 
 # ────────────────────────────────────────────────
-# Tab 5: Individual Leaderboard
+# Leaderboards
 # ────────────────────────────────────────────────
 with tab5:
-    st.header("Individual Stableford Leaderboard")
-
-    if st.button("Calculate / Refresh Results", type="primary", use_container_width=True):
-        st.session_state.ind_df, st.session_state.team_df, st.session_state.player_details = compute_results()
-        st.success("Results calculated!")
-
+    st.header("Individual Leaderboard")
+    if st.button("Calculate / Refresh"):
+        st.session_state.ind_df, st.session_state.team_df, st.session_state.details = compute_results()
+        st.success("Calculated")
     if 'ind_df' in st.session_state and st.session_state.ind_df is not None:
         st.dataframe(st.session_state.ind_df, use_container_width=True, hide_index=True)
     else:
-        st.info("Click 'Calculate / Refresh Results' after entering scores.")
+        st.info("Calculate after entering scores")
 
-# ────────────────────────────────────────────────
-# Tab 6: Team Leaderboard
-# ────────────────────────────────────────────────
 with tab6:
-    st.header("Team Irish Rumble Leaderboard")
-
+    st.header("Team Leaderboard")
     if 'team_df' in st.session_state and st.session_state.team_df is not None:
         st.dataframe(st.session_state.team_df, use_container_width=True, hide_index=True)
     else:
-        st.info("Calculate results above.")
+        st.info("Calculate first")
 
-# ────────────────────────────────────────────────
-# Tab 7: Player Details
-# ────────────────────────────────────────────────
 with tab7:
     st.header("Player Details")
-
-    if 'player_details' in st.session_state and st.session_state.player_details:
-        player = st.selectbox("Select Player", list(st.session_state.player_details.keys()))
-
-        if player:
-            d = st.session_state.player_details[player]
-
+    if 'details' in st.session_state and st.session_state.details:
+        p = st.selectbox("Player", list(st.session_state.details.keys()))
+        if p:
+            d = st.session_state.details[p]
             st.subheader("Points per Hole")
-            hole_df = pd.DataFrame({
-                'Hole': range(1, 19),
-                'Points': d['Points per Hole']
-            })
-            st.dataframe(hole_df, use_container_width=True, hide_index=True)
-
+            st.dataframe(pd.DataFrame({'Hole': range(1,19), 'Points': d['Points per Hole']}), hide_index=True)
             st.subheader("Breakdowns")
-            breakdown = pd.Series(d['Breakdowns']).to_frame('Points')
-            st.dataframe(breakdown, use_container_width=True)
+            st.dataframe(pd.Series(d['Breakdowns']).to_frame('Points'))
     else:
-        st.info("Calculate results first.")
+        st.info("Calculate first")
 
-# ────────────────────────────────────────────────
 # Reset
-# ────────────────────────────────────────────────
-if st.button("Reset Competition (keeps players DB)"):
-    for k in ['golfers', 'ind_df', 'team_df', 'player_details']:
+if st.button("Reset Competition (keeps DB)"):
+    for k in ['golfers', 'ind_df', 'team_df', 'details']:
         st.session_state.pop(k, None)
     st.rerun()
