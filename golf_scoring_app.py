@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import sqlite3
 
 # Mobile-friendly settings - MUST come right after import, before any st.title etc.
 st.set_page_config(
@@ -17,6 +18,33 @@ hide_st_style = """
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
+
+# Database setup (SQLite for persistent player profiles)
+DB_FILE = 'golf_db.db'
+conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+cursor = conn.cursor()
+
+# Create players table if not exists
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS players (
+        name TEXT PRIMARY KEY,
+        handicap INTEGER
+    )
+''')
+conn.commit()
+
+# Function to add or update player in DB
+def save_player(name, handicap):
+    cursor.execute('''
+        INSERT OR REPLACE INTO players (name, handicap)
+        VALUES (?, ?)
+    ''', (name, handicap))
+    conn.commit()
+
+# Function to load all players from DB
+def load_players():
+    cursor.execute('SELECT * FROM players')
+    return pd.DataFrame(cursor.fetchall(), columns=['Name', 'Handicap'])
 
 # Function to calculate Stableford points for a hole
 def stableford_points(gross_score, par, strokes_received):
@@ -43,8 +71,8 @@ def strokes_on_hole(handicap, stroke_index):
         return full_strokes + 1
     return full_strokes
 
-# App layout with tabs for "separate sheets"
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Course Setup", "Add Golfers", "Enter Scores", "Individual Leaderboard", "Team Leaderboard", "Player Details"])
+# App layout with tabs
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Course Setup", "Manage Players", "Assign to Competition", "Enter Scores", "Individual Leaderboard", "Team Leaderboard", "Player Details"])
 
 with tab1:
     st.header("Course Setup")
@@ -68,47 +96,87 @@ with tab1:
     st.session_state.course = course_df
 
 with tab2:
-    st.header("Add Golfers")
+    st.header("Manage Player Profiles")
+    players_df = load_players()
+    st.subheader("Existing Players")
+    st.table(players_df)
+
+    st.subheader("Add or Update Player")
+    player_name = st.text_input("Player Name")
+    handicap = st.number_input("Handicap", min_value=0, max_value=54, value=0)
+    if st.button("Save Player"):
+        if player_name:
+            save_player(player_name, handicap)
+            st.success(f"Saved {player_name} with handicap {handicap}")
+        else:
+            st.error("Enter a name")
+
+with tab3:
+    st.header("Assign Players to Competition")
     if 'golfers' not in st.session_state:
         st.session_state.golfers = []
 
-    golfer_name = st.text_input("Golfer Name")
-    handicap = st.number_input("Handicap", min_value=0, max_value=54, value=0)
-    team = st.text_input("Team Name (e.g., Team A)")
+    players_df = load_players()
+    if not players_df.empty:
+        selected_players = st.multiselect("Select Players from Database", players_df['Name'].tolist())
+        team = st.text_input("Team Name (e.g., Team A)")
 
-    if st.button("Add Golfer"):
-        st.session_state.golfers.append({
-            'Name': golfer_name,
-            'Handicap': handicap,
-            'Team': team
-        })
-        st.success(f"Added {golfer_name}")
+        if st.button("Add Selected to Competition"):
+            for name in selected_players:
+                hc = players_df[players_df['Name'] == name]['Handicap'].values[0]
+                st.session_state.golfers.append({
+                    'Name': name,
+                    'Handicap': hc,
+                    'Team': team
+                })
+            st.success(f"Added {len(selected_players)} players to competition")
 
-    # Display golfers
+    # Option to add new player directly here (and save to DB)
+    st.subheader("Or Add New Player")
+    new_name = st.text_input("New Player Name")
+    new_hc = st.number_input("New Handicap", min_value=0, max_value=54, value=0)
+    new_team = st.text_input("New Team Name")
+    if st.button("Add New and Save to DB"):
+        if new_name:
+            save_player(new_name, new_hc)
+            st.session_state.golfers.append({
+                'Name': new_name,
+                'Handicap': new_hc,
+                'Team': new_team
+            })
+            st.success(f"Added and saved {new_name}")
+        else:
+            st.error("Enter a name")
+
+    # Display current competition golfers
     if st.session_state.golfers:
         golfers_df = pd.DataFrame(st.session_state.golfers)
+        st.subheader("Current Competition Golfers")
         st.table(golfers_df)
 
-with tab3:
+with tab4:
     st.header("Enter Scores")
-    selected_golfer = st.selectbox("Select Golfer", [g['Name'] for g in st.session_state.golfers])
-    if selected_golfer:
-        golfer = next(g for g in st.session_state.golfers if g['Name'] == selected_golfer)
-        if 'scores' not in golfer:
-            golfer['scores'] = [0] * 18  # Default gross scores
+    if 'golfers' in st.session_state and st.session_state.golfers:
+        selected_golfer = st.selectbox("Select Golfer", [g['Name'] for g in st.session_state.golfers])
+        if selected_golfer:
+            golfer = next(g for g in st.session_state.golfers if g['Name'] == selected_golfer)
+            if 'scores' not in golfer:
+                golfer['scores'] = [0] * 18  # Default gross scores
 
-        scores = st.data_editor(
-            pd.DataFrame({
-                'Hole': range(1, 19),
-                'Gross Score': golfer['scores']
-            }),
-            num_rows="fixed",
-            hide_index=True,
-            column_config={"Hole": st.column_config.NumberColumn(disabled=True)}
-        )
-        golfer['scores'] = scores['Gross Score'].tolist()
+            scores = st.data_editor(
+                pd.DataFrame({
+                    'Hole': range(1, 19),
+                    'Gross Score': golfer['scores']
+                }),
+                num_rows="fixed",
+                hide_index=True,
+                column_config={"Hole": st.column_config.NumberColumn(disabled=True)}
+            )
+            golfer['scores'] = scores['Gross Score'].tolist()
+    else:
+        st.info("Assign players to the competition first.")
 
-# Compute results function (shared for leaderboards)
+# Compute results function (unchanged)
 def compute_results():
     course_df = st.session_state.course
     individual_results = []
@@ -239,21 +307,21 @@ def compute_results():
 if st.button("Calculate Results"):
     st.session_state.ind_df, st.session_state.team_df, st.session_state.player_details = compute_results()
 
-with tab4:
+with tab5:
     st.header("Individual Stableford Leaderboard")
     if 'ind_df' in st.session_state and st.session_state.ind_df is not None:
         st.table(st.session_state.ind_df)
     else:
         st.info("Enter scores and click 'Calculate Results' to see the leaderboard.")
 
-with tab5:
+with tab6:
     st.header("Team Irish Rumble Leaderboard")
     if 'team_df' in st.session_state and st.session_state.team_df is not None:
         st.table(st.session_state.team_df)
     else:
         st.info("Enter scores and click 'Calculate Results' to see the leaderboard.")
 
-with tab6:
+with tab7:
     st.header("Player Details (Stableford Points)")
     if 'player_details' in st.session_state and st.session_state.player_details:
         selected_player = st.selectbox("Select Player", list(st.session_state.player_details.keys()))
@@ -274,7 +342,14 @@ with tab6:
     else:
         st.info("Enter scores and click 'Calculate Results' to see details.")
 
-# Optional: Reset app
-if st.button("Reset All Data"):
-    st.session_state.clear()
+# Optional: Reset competition (but keep DB)
+if st.button("Reset Competition Data (Keeps Player DB)"):
+    if 'golfers' in st.session_state:
+        del st.session_state.golfers
+    if 'ind_df' in st.session_state:
+        del st.session_state.ind_df
+    if 'team_df' in st.session_state:
+        del st.session_state.team_df
+    if 'player_details' in st.session_state:
+        del st.session_state.player_details
     st.experimental_rerun()
