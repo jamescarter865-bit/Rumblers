@@ -109,11 +109,12 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
 ])
 
 # ────────────────────────────────────────────────
-# Tab 1: Course Setup – improved save + load
+# Tab 1: Course Setup – FIXED saving & loading
 # ────────────────────────────────────────────────
 with tab1:
     st.header("Course Setup")
 
+    # Force reload course list every time this tab renders
     course_names = load_all_course_names()
 
     col1, col2 = st.columns([3, 1])
@@ -131,22 +132,13 @@ with tab1:
         'Stroke Index': list(range(1, 19))
     })
 
-    # Load course when selected
-    if selected_course != "New Course":
-        loaded = load_course(selected_course)
-        if loaded is not None:
-            st.session_state.course_temp = loaded.copy()
-            st.session_state.course = loaded.copy()
-        else:
-            st.session_state.course_temp = default_course.copy()
-            st.session_state.course = default_course.copy()
+    # Load the selected course
+    if selected_course == "New Course":
+        current_df = st.session_state.get('course_temp', default_course.copy())
     else:
-        if 'course_temp' not in st.session_state:
-            st.session_state.course_temp = default_course.copy()
-        if 'course' not in st.session_state:
-            st.session_state.course = default_course.copy()
-
-    current_df = st.session_state.course_temp.copy()
+        loaded = load_course(selected_course)
+        current_df = loaded if loaded is not None else default_course.copy()
+        st.session_state.course_temp = current_df.copy()  # sync for editing
 
     st.caption("Arrow keys to move • Enter to go down")
 
@@ -170,7 +162,7 @@ with tab1:
         update_mode=GridUpdateMode.VALUE_CHANGED,
         height=680,
         fit_columns_on_grid_load=True,
-        key=f"course_grid_{selected_course}"
+        key=f"course_grid_{selected_course}"  # unique per course
     )
 
     grid_data = pd.DataFrame(response['data'])
@@ -190,8 +182,8 @@ with tab1:
                 col1, col2 = st.columns(2)
                 if col1.button("Yes – Save"):
                     save_course(course_name.strip(), grid_data['Par'].tolist(), grid_data['Stroke Index'].tolist())
-                    st.success(f"Course '{course_name}' saved/overwritten")
-                    st.rerun()
+                    st.success(f"Course '{course_name}' saved/overwritten – refreshing list...")
+                    st.rerun()  # This forces the dropdown to reload with the new course
                 if col2.button("Cancel"):
                     st.rerun()
 
