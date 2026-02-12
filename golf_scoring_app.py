@@ -21,7 +21,7 @@ hide_st_style = """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
 # ────────────────────────────────────────────────
-# Database setup
+# Database setup – players + courses
 # ────────────────────────────────────────────────
 DB_FILE = 'golf_db.db'
 conn = sqlite3.connect(DB_FILE, check_same_thread=False)
@@ -101,113 +101,7 @@ def strokes_on_hole(handicap, stroke_index):
     return full + 1 if stroke_index <= rem else full
 
 # ────────────────────────────────────────────────
-# Calculation function (Irish Rumble with all 4 on hole 18)
-# ────────────────────────────────────────────────
-def compute_results():
-    if 'course' not in st.session_state:
-        st.warning("No course loaded")
-        return None, None, {}
-
-    course = st.session_state.course
-    ind = []
-    det = {}
-
-    for g in st.session_state.golfers:
-        if 'scores' not in g or not g['scores']:
-            continue
-
-        pts = []
-        for h in range(18):
-            gross = g['scores'][h]
-            if gross <= 0:
-                pts.append(0)
-                continue
-            par = course.iloc[h]['Par']
-            si = course.iloc[h]['Stroke Index']
-            strk = strokes_on_hole(g['Handicap'], si)
-            pts.append(stableford_points(gross, par, strk))
-
-        tot = sum(pts)
-        b9 = sum(pts[9:18])
-        b6 = sum(pts[12:18])
-        b3 = sum(pts[15:18])
-        b1 = pts[17]
-
-        ind.append({
-            'Name': g['Name'],
-            'Team': g['Team'],
-            'Total Points': tot,
-            'Back 9': b9,
-            'Back 6': b6,
-            'Back 3': b3,
-            'Back 1': b1
-        })
-
-        det[g['Name']] = {
-            'Points per Hole': pts,
-            'Breakdowns': {'Total': tot, 'Back 9': b9, 'Back 6': b6, 'Back 3': b3, 'Back 1': b1},
-            'course': course.to_dict('records'),
-            'gross_scores': g['scores'],
-            'handicap': g['Handicap']
-        }
-
-    if not ind:
-        return None, None, {}
-
-    ind_df = pd.DataFrame(ind).sort_values(
-        ['Total Points', 'Back 9', 'Back 6', 'Back 3', 'Back 1'],
-        ascending=[False]*5
-    )
-
-    # Team Irish Rumble – all 4 on hole 18
-    team_dict = {}
-    for g in st.session_state.golfers:
-        if 'scores' not in g:
-            continue
-        t = g['Team']
-        team_dict.setdefault(t, []).append({
-            'points': [stableford_points(g['scores'][h], course.iloc[h]['Par'], strokes_on_hole(g['Handicap'], course.iloc[h]['Stroke Index']))
-                       for h in range(18)],
-            'name': g['Name']
-        })
-
-    team_res = []
-    for t, players in team_dict.items():
-        if len(players) < 4:
-            continue
-
-        tpts = []
-        for h in range(18):
-            hole_scores = sorted([p['points'][h] for p in players], reverse=True)
-            if h < 6:
-                tpts.append(hole_scores[0])          # best 1
-            elif h < 12:
-                tpts.append(sum(hole_scores[:2]))    # best 2
-            elif h == 17:  # hole 18
-                tpts.append(sum(hole_scores[:4]))    # all 4
-            else:
-                tpts.append(sum(hole_scores[:3]))    # best 3
-
-        tot = sum(tpts)
-        team_res.append({
-            'Team': t,
-            'Players': ", ".join([p['name'] for p in players]),
-            'Total Points': tot,
-            'Back 9': sum(tpts[9:18]),
-            'Back 6': sum(tpts[12:18]),
-            'Back 3': sum(tpts[15:18]),
-            'Back 1': tpts[17]
-        })
-
-    team_df = pd.DataFrame(team_res).sort_values(
-        ['Total Points', 'Back 9', 'Back 6', 'Back 3', 'Back 1'],
-        ascending=[False]*5
-    ) if team_res else None
-
-    return ind_df, team_df, det
-
-# ────────────────────────────────────────────────
-# Tabs
+# Tabs – reordered as requested
 # ────────────────────────────────────────────────
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "Manage Players", "Manage Courses", "Competition Setup",
@@ -392,7 +286,7 @@ with tab3:
             st.rerun()
 
 # ────────────────────────────────────────────────
-# Tab 4: Enter Scores – using data_editor (no AgGrid to avoid import error)
+# Tab 4: Enter Scores
 # ────────────────────────────────────────────────
 with tab4:
     st.header("Enter Scores")
@@ -443,7 +337,7 @@ with tab4:
 
             if st.button(f"Save scores for {team}"):
                 for name in names:
-                    scores = edited_scores[name].tolist()
+                    scores = [int(s) if pd.notnull(s) else 0 for s in edited_scores[name].tolist()]
                     for g in members:
                         if g['Name'] == name:
                             g['scores'] = scores
