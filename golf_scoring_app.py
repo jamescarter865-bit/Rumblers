@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import json
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
 
 # Mobile-friendly settings
 st.set_page_config(
@@ -100,7 +101,7 @@ def strokes_on_hole(handicap, stroke_index):
     return full + 1 if stroke_index <= rem else full
 
 # ────────────────────────────────────────────────
-# Calculation function (Irish Rumble – all 4 on hole 18)
+# Calculation function (Irish Rumble with all 4 on hole 18)
 # ────────────────────────────────────────────────
 def compute_results():
     if 'course' not in st.session_state:
@@ -111,7 +112,6 @@ def compute_results():
     ind = []
     det = {}
 
-    # Individual
     for g in st.session_state.golfers:
         if 'scores' not in g or not g['scores']:
             continue
@@ -207,7 +207,7 @@ def compute_results():
     return ind_df, team_df, det
 
 # ────────────────────────────────────────────────
-# Tabs – reordered as requested
+# Tabs
 # ────────────────────────────────────────────────
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "Manage Players", "Manage Courses", "Competition Setup",
@@ -392,7 +392,7 @@ with tab3:
             st.rerun()
 
 # ────────────────────────────────────────────────
-# Tab 4: Enter Scores
+# Tab 4: Enter Scores – using data_editor (no AgGrid to avoid import error)
 # ────────────────────────────────────────────────
 with tab4:
     st.header("Enter Scores")
