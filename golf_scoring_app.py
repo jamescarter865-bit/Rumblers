@@ -104,97 +104,59 @@ def strokes_on_hole(handicap, stroke_index):
 # Tabs
 # ────────────────────────────────────────────────
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
-    "Course Setup", "Manage Courses", "Manage Players", "Competition Setup",
-    "Enter Scores", "Individual Leaderboard", "Team Leaderboard", "Player Details"
+    "Competition Setup", "Enter Scores", "Individual Leaderboard", "Team Leaderboard", "Player Details",
+    "Manage Players", "Manage Courses", "Create New Course"
 ])
 
-with tab1:
-    st.header("Course Setup")
+# ────────────────────────────────────────────────
+# Tab 8: Create New Course
+# ────────────────────────────────────────────────
+with tab8:
+    st.header("Create New Course")
 
-    # Force reload of course list every render
-    if 'course_list' not in st.session_state:
-        st.session_state.course_list = load_all_course_names()
-    course_names = st.session_state.course_list
+    course_name = st.text_input("Course Name")
 
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        selected_course = st.selectbox("Load saved course", ["New Course"] + course_names, key="course_select")
-    with col2:
-        if selected_course != "New Course" and st.button("Delete this course"):
-            delete_course(selected_course)
-            st.session_state.course_list = load_all_course_names()  # refresh list
-            st.success(f"Deleted {selected_course}")
+    st.subheader("Enter Pars and Stroke Indices for 18 holes")
+
+    pars = []
+    sis = []
+
+    col_par, col_si = st.columns(2)
+    with col_par:
+        st.subheader("Par")
+        for h in range(1, 19):
+            p = st.number_input(f"Hole {h} Par", min_value=3, max_value=5, value=4, key=f"par_{h}")
+            pars.append(p)
+
+    with col_si:
+        st.subheader("Stroke Index")
+        for h in range(1, 19):
+            s = st.number_input(f"Hole {h} SI", min_value=1, max_value=18, value=h, key=f"si_{h}")
+            sis.append(s)
+
+    if st.button("Save New Course"):
+        if not course_name.strip():
+            st.error("Please enter a course name")
+        elif course_name.strip() in load_all_course_names():
+            st.warning("A course with this name already exists. Overwrite?")
+            if st.button("Yes – Overwrite"):
+                save_course(course_name.strip(), pars, sis)
+                st.success(f"Course '{course_name}' overwritten!")
+                st.rerun()
+        else:
+            save_course(course_name.strip(), pars, sis)
+            st.success(f"Course '{course_name}' saved!")
             st.rerun()
 
-    default_course = pd.DataFrame({
-        'Hole': range(1, 19),
-        'Par': [4] * 18,
-        'Stroke Index': list(range(1, 19))
-    })
-
-    # Load selected course
-    if selected_course == "New Course":
-        current_df = st.session_state.get('course_temp', default_course.copy())
-    else:
-        loaded = load_course(selected_course)
-        current_df = loaded if loaded is not None else default_course.copy()
-        st.session_state.course_temp = current_df.copy()
-
-    st.caption("Arrow keys to move • Enter to go down")
-
-    gb = GridOptionsBuilder.from_dataframe(current_df)
-    gb.configure_default_column(editable=True, minWidth=90)
-    gb.configure_column("Hole", editable=False, width=80)
-    gb.configure_column("Par", type="number", width=100)
-    gb.configure_column("Stroke Index", type="number", width=120)
-    gb.configure_grid_options(
-        enterNavigatesVerticallyAfterEdit=True,
-        suppressRowClickSelection=True,
-        domLayout='autoHeight',
-        rowHeight=40
-    )
-    grid_options = gb.build()
-
-    response = AgGrid(
-        current_df,
-        gridOptions=grid_options,
-        data_return_mode=DataReturnMode.AS_INPUT,
-        update_mode=GridUpdateMode.VALUE_CHANGED,
-        height=680,
-        fit_columns_on_grid_load=True,
-        key=f"course_grid_{selected_course}"
-    )
-
-    grid_data = pd.DataFrame(response['data'])
-
-    col_save, col_name = st.columns([3, 2])
-    with col_save:
-        if st.button("💾 Save Course (temporary)", width="stretch"):
-            st.session_state.course_temp = grid_data.copy()
-            st.session_state.course = grid_data.copy()
-            st.success("Course saved temporarily – now enter name below to save permanently")
-
-    with col_name:
-        course_name = st.text_input("Course Name (to save permanently)", value=selected_course if selected_course != "New Course" else "", key="course_name_input")
-        if st.button("Save / Overwrite Course", width="stretch") and course_name.strip():
-            try:
-                save_course(course_name.strip(), grid_data['Par'].tolist(), grid_data['Stroke Index'].tolist())
-                # Refresh course list
-                st.session_state.course_list = load_all_course_names()
-                st.success(f"Course '{course_name}' saved/overwritten! Refresh page if not visible in dropdown.")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Save failed: {str(e)}") 
-                
 # ────────────────────────────────────────────────
-# Tab 2: Manage Courses
+# Tab 6: Manage Courses
 # ────────────────────────────────────────────────
-with tab2:
+with tab6:
     st.header("Manage Saved Courses")
 
     courses = load_all_course_names()
     if not courses:
-        st.info("No saved courses yet")
+        st.info("No saved courses yet – create one in the 'Create New Course' tab")
     else:
         for c in courses:
             col1, col2 = st.columns([4, 1])
@@ -205,9 +167,9 @@ with tab2:
                 st.rerun()
 
 # ────────────────────────────────────────────────
-# Tab 3: Manage Players
+# Tab 7: Manage Players (unchanged)
 # ────────────────────────────────────────────────
-with tab3:
+with tab7:
     st.header("Manage Players")
 
     df_players = load_players()
@@ -253,10 +215,32 @@ with tab3:
             st.rerun()
 
 # ────────────────────────────────────────────────
-# Tab 4: Competition Setup
+# Tab 1: Competition Setup – now requires course selection
 # ────────────────────────────────────────────────
-with tab4:
+with tab1:
     st.header("Competition Setup")
+
+    if 'selected_course' not in st.session_state:
+        st.session_state.selected_course = None
+
+    course_names = load_all_course_names()
+    if not course_names:
+        st.warning("No courses saved yet. Go to 'Create New Course' tab to add one.")
+    else:
+        selected_course = st.selectbox("Select Course for this Competition", course_names)
+        if st.button("Load Course"):
+            loaded = load_course(selected_course)
+            if loaded is not None:
+                st.session_state.selected_course = loaded
+                st.session_state.course = loaded
+                st.success(f"Course '{selected_course}' loaded")
+            else:
+                st.error("Failed to load course")
+
+    if 'course' not in st.session_state:
+        st.info("Select and load a course above to start competition")
+    else:
+        st.success("Course loaded – ready for players")
 
     if 'golfers' not in st.session_state:
         st.session_state.golfers = []
@@ -267,16 +251,19 @@ with tab4:
     selected = st.multiselect("From database", players_db['Name'].tolist())
     team_input = st.text_input("Team name")
     if st.button("Add selected"):
-        for name in selected:
-            hc = players_db[players_db['Name'] == name]['Handicap'].values[0]
-            st.session_state.golfers.append({
-                'Name': name,
-                'Handicap': hc,
-                'Team': team_input,
-                'scores': [0]*18
-            })
-        st.success("Added")
-        st.rerun()
+        if 'course' not in st.session_state:
+            st.error("Load a course first")
+        else:
+            for name in selected:
+                hc = players_db[players_db['Name'] == name]['Handicap'].values[0]
+                st.session_state.golfers.append({
+                    'Name': name,
+                    'Handicap': hc,
+                    'Team': team_input,
+                    'scores': [0]*18
+                })
+            st.success("Added")
+            st.rerun()
 
     if st.session_state.golfers:
         df_comp = pd.DataFrame(st.session_state.golfers)
@@ -313,13 +300,15 @@ with tab4:
             st.rerun()
 
 # ────────────────────────────────────────────────
-# Tab 5: Enter Scores
+# Tab 2: Enter Scores
 # ────────────────────────────────────────────────
-with tab5:
+with tab2:
     st.header("Enter Scores")
 
-    if not st.session_state.get('golfers'):
-        st.info("No players in competition")
+    if 'course' not in st.session_state:
+        st.info("Load a course in Competition Setup first")
+    elif not st.session_state.get('golfers'):
+        st.info("Add players in Competition Setup first")
     else:
         teams = {}
         for g in st.session_state.golfers:
@@ -497,7 +486,7 @@ def compute_results():
 # ────────────────────────────────────────────────
 # Leaderboards & Details
 # ────────────────────────────────────────────────
-with tab6:
+with tab5:
     st.header("Individual Leaderboard")
     if st.button("Calculate / Refresh Results", type="primary"):
         st.session_state.ind_df, st.session_state.team_df, st.session_state.details = compute_results()
@@ -507,14 +496,14 @@ with tab6:
     else:
         st.info("Enter scores and calculate")
 
-with tab7:
+with tab6:
     st.header("Team Leaderboard (Irish Rumble)")
     if 'team_df' in st.session_state and st.session_state.team_df is not None:
         st.dataframe(st.session_state.team_df, width="stretch", hide_index=True)
     else:
         st.info("Calculate results above")
 
-with tab8:
+with tab7:
     st.header("Player Details & Full Scorecard")
 
     if 'details' in st.session_state and st.session_state.details:
@@ -523,7 +512,6 @@ with tab8:
         if player:
             d = st.session_state.details[player]
 
-            # Full Scorecard
             st.subheader("Full Scorecard")
 
             course_data = d.get('course', [])
@@ -573,7 +561,6 @@ with tab8:
                 full_scorecard = pd.concat([df_score, totals_row], ignore_index=True)
                 st.dataframe(full_scorecard, width="stretch", hide_index=True)
 
-            # Breakdowns
             st.subheader("Points Breakdown")
             st.dataframe(pd.Series(d['Breakdowns']).to_frame('Points'), width="stretch")
     else:
@@ -581,6 +568,6 @@ with tab8:
 
 # Reset
 if st.button("Reset Competition (keeps database)"):
-    for k in ['golfers', 'ind_df', 'team_df', 'details', 'course', 'course_temp']:
+    for k in ['golfers', 'ind_df', 'team_df', 'details', 'course', 'course_temp', 'selected_course']:
         st.session_state.pop(k, None)
     st.rerun()
