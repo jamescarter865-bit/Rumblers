@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import json
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
 
 # Mobile-friendly settings
 st.set_page_config(
@@ -101,7 +100,7 @@ def strokes_on_hole(handicap, stroke_index):
     return full + 1 if stroke_index <= rem else full
 
 # ────────────────────────────────────────────────
-# Tabs – reordered per request
+# Tabs – reordered
 # ────────────────────────────────────────────────
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "Manage Players", "Manage Courses", "Competition Setup",
@@ -228,7 +227,7 @@ with tab2:
                 st.rerun()
 
 # ────────────────────────────────────────────────
-# Tab 3: Competition Setup – select course
+# Tab 3: Competition Setup – select course + add players/teams
 # ────────────────────────────────────────────────
 with tab3:
     st.header("Competition Setup")
@@ -237,7 +236,7 @@ with tab3:
     if not courses:
         st.warning("No courses saved. Create one in Manage Courses tab")
     else:
-        selected_course = st.selectbox("Select Course for Competition", courses)
+        selected_course = st.selectbox("Select Course for this Competition", courses)
         if st.button("Load Selected Course"):
             loaded = load_course(selected_course)
             if loaded is not None:
@@ -252,10 +251,10 @@ with tab3:
 
     players_db = load_players()
 
-    st.subheader("Add Players")
+    st.subheader("Add Players to Teams")
     selected = st.multiselect("From database", players_db['Name'].tolist())
     team_input = st.text_input("Team name")
-    if st.button("Add selected"):
+    if st.button("Add selected to team"):
         for name in selected:
             hc = players_db[players_db['Name'] == name]['Handicap'].values[0]
             st.session_state.golfers.append({
@@ -270,7 +269,7 @@ with tab3:
     if st.session_state.golfers:
         df_comp = pd.DataFrame(st.session_state.golfers)
 
-        st.subheader("Current Players")
+        st.subheader("Current Players in Competition")
 
         edited_comp = st.data_editor(
             df_comp,
@@ -295,7 +294,7 @@ with tab3:
                 if col2.button("Cancel"):
                     st.rerun()
 
-        remove_names = st.multiselect("Remove players", df_comp['Name'].tolist(), key="remove_select")
+        remove_names = st.multiselect("Remove players from competition", df_comp['Name'].tolist(), key="remove_select")
         if st.button("Remove selected players"):
             st.session_state.golfers = [g for g in st.session_state.golfers if g['Name'] not in remove_names]
             st.success(f"Removed {len(remove_names)} player(s)")
@@ -307,8 +306,10 @@ with tab3:
 with tab4:
     st.header("Enter Scores")
 
-    if not st.session_state.get('golfers'):
-        st.info("No players in competition")
+    if 'course' not in st.session_state:
+        st.info("Load a course in Competition Setup first")
+    elif not st.session_state.get('golfers'):
+        st.info("Add players in Competition Setup first")
     else:
         teams = {}
         for g in st.session_state.golfers:
@@ -391,7 +392,7 @@ with tab5:
         st.info("Enter scores and calculate")
 
 # ────────────────────────────────────────────────
-# Tab 6: Team Leaderboard
+# Tab 6: Team Leaderboard – Irish Rumble fixed
 # ────────────────────────────────────────────────
 with tab6:
     st.header("Team Leaderboard (Irish Rumble)")
@@ -401,7 +402,7 @@ with tab6:
         st.info("Calculate results above")
 
 # ────────────────────────────────────────────────
-# Tab 7: Player Details
+# Tab 7: Player Details – full scorecard
 # ────────────────────────────────────────────────
 with tab7:
     st.header("Player Details & Full Scorecard")
@@ -412,7 +413,6 @@ with tab7:
         if player:
             d = st.session_state.details[player]
 
-            # Full Scorecard
             st.subheader("Full Scorecard")
 
             course_data = d.get('course', [])
@@ -462,7 +462,6 @@ with tab7:
                 full_scorecard = pd.concat([df_score, totals_row], ignore_index=True)
                 st.dataframe(full_scorecard, width="stretch", hide_index=True)
 
-            # Breakdowns
             st.subheader("Points Breakdown")
             st.dataframe(pd.Series(d['Breakdowns']).to_frame('Points'), width="stretch")
     else:
