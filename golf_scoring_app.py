@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import json
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
 
 # Mobile-friendly settings
 st.set_page_config(
@@ -207,7 +208,7 @@ def compute_results():
 # Tabs
 # ────────────────────────────────────────────────
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-    "Manage Players", "Manage Courses", "Competition Setup",
+    "Manage Players", "Course Setup", "Competition Setup",
     "Enter Scores", "Individual Leaderboard", "Team Leaderboard", "Player Details"
 ])
 
@@ -260,59 +261,77 @@ with tab1:
             st.rerun()
 
 # ────────────────────────────────────────────────
-# Tab 2: Manage Courses
+# Tab 2: Course Setup – create, edit, delete
 # ────────────────────────────────────────────────
 with tab2:
-    st.header("Manage Courses")
+    st.header("Course Setup")
 
     courses = load_all_course_names()
-    if not courses:
-        st.info("No saved courses yet – create one below")
+
+    selected_course = st.selectbox("Select Course to Edit/Delete", ["New Course"] + courses)
+
+    default_course = pd.DataFrame({
+        'Hole': range(1, 19),
+        'Par': [4] * 18,
+        'Stroke Index': list(range(1, 19))
+    })
+
+    if selected_course == "New Course":
+        current_df = default_course.copy()
     else:
-        st.subheader("Saved Courses")
-        for c in courses:
-            col1, col2 = st.columns([4, 1])
-            col1.write(c)
-            if col2.button("Delete", key=f"del_{c}"):
-                delete_course(c)
-                st.success(f"Deleted {c}")
+        loaded = load_course(selected_course)
+        current_df = loaded if loaded is not None else default_course.copy()
+
+    st.caption("Edit pars and stroke indices below")
+
+    gb = GridOptionsBuilder.from_dataframe(current_df)
+    gb.configure_default_column(editable=True, minWidth=90)
+    gb.configure_column("Hole", editable=False, width=80)
+    gb.configure_column("Par", type="number", width=100)
+    gb.configure_column("Stroke Index", type="number", width=120)
+    gb.configure_grid_options(
+        enterNavigatesVerticallyAfterEdit=True,
+        suppressRowClickSelection=True,
+        domLayout='autoHeight',
+        rowHeight=40
+    )
+    grid_options = gb.build()
+
+    response = AgGrid(
+        current_df,
+        gridOptions=grid_options,
+        data_return_mode=DataReturnMode.AS_INPUT,
+        update_mode=GridUpdateMode.VALUE_CHANGED,
+        height=680,
+        fit_columns_on_grid_load=True,
+        key=f"course_grid_{selected_course}"
+    )
+
+    grid_data = pd.DataFrame(response['data'])
+
+    course_name = st.text_input("Course Name (for new or rename)", value=selected_course if selected_course != "New Course" else "")
+
+    col_save, col_delete = st.columns(2)
+    with col_save:
+        if st.button("Save Course"):
+            if not course_name.strip():
+                st.error("Enter a course name")
+            else:
+                save_course(course_name.strip(), grid_data['Par'].tolist(), grid_data['Stroke Index'].tolist())
+                st.success(f"Course '{course_name}' saved!")
                 st.rerun()
 
-    st.subheader("Create New Course")
-
-    course_name = st.text_input("Course Name")
-
-    st.subheader("Enter Pars and Stroke Indices")
-
-    pars_new = []
-    sis_new = []
-
-    col_par, col_si = st.columns(2)
-    with col_par:
-        st.subheader("Par")
-        for h in range(1, 19):
-            p = st.number_input(f"Hole {h} Par", min_value=3, max_value=5, value=4, key=f"par_new_{h}")
-            pars_new.append(p)
-
-    with col_si:
-        st.subheader("Stroke Index")
-        for h in range(1, 19):
-            s = st.number_input(f"Hole {h} SI", min_value=1, max_value=18, value=h, key=f"si_new_{h}")
-            sis_new.append(s)
-
-    if st.button("Save New Course"):
-        if not course_name.strip():
-            st.error("Enter a course name")
-        elif course_name.strip() in courses:
-            st.warning(f"Course '{course_name}' already exists. Overwrite?")
-            if st.button("Yes – Overwrite"):
-                save_course(course_name.strip(), pars_new, sis_new)
-                st.success(f"Course '{course_name}' overwritten")
-                st.rerun()
-        else:
-            save_course(course_name.strip(), pars_new, sis_new)
-            st.success(f"Course '{course_name}' saved!")
-            st.rerun()
+    with col_delete:
+        if selected_course != "New Course" and st.button("Delete Course", type="primary"):
+            with st.popover("Confirm delete"):
+                st.write(f"Delete '{selected_course}'?")
+                col1, col2 = st.columns(2)
+                if col1.button("Yes"):
+                    delete_course(selected_course)
+                    st.success(f"Deleted '{selected_course}'")
+                    st.rerun()
+                if col2.button("Cancel"):
+                    st.rerun()
 
 # ────────────────────────────────────────────────
 # Tab 3: Competition Setup
@@ -322,7 +341,7 @@ with tab3:
 
     courses = load_all_course_names()
     if not courses:
-        st.warning("No courses saved. Create one in Manage Courses tab")
+        st.warning("No courses saved. Create one in Course Setup tab")
     else:
         selected_course = st.selectbox("Select Course for Competition", courses)
         if st.button("Load Selected Course"):
@@ -474,7 +493,7 @@ with tab6:
         st.info("Calculate results above")
 
 # ────────────────────────────────────────────────
-# Tab 7: Player Details – using st.session_state.course
+# Tab 7: Player Details
 # ────────────────────────────────────────────────
 with tab7:
     st.header("Player Details & Full Scorecard")
