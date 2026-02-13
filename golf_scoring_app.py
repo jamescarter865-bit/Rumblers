@@ -282,7 +282,7 @@ with tab2:
         loaded = load_course(selected_course)
         current_df = loaded if loaded is not None else default_course.copy()
 
-    st.caption("Edit pars and stroke indices below")
+    st.caption("Edit the table below")
 
     gb = GridOptionsBuilder.from_dataframe(current_df)
     gb.configure_default_column(editable=True, minWidth=90)
@@ -334,7 +334,7 @@ with tab2:
                     st.rerun()
 
 # ────────────────────────────────────────────────
-# Tab 3: Competition Setup
+# Tab 3: Competition Setup – fixed handicap update
 # ────────────────────────────────────────────────
 with tab3:
     st.header("Competition Setup")
@@ -387,7 +387,7 @@ with tab3:
             },
             hide_index=True,
             width="stretch",
-            key="comp_editor"
+            key="comp_editor_key"  # Added key for persistence
         )
 
         if st.button("Save Team / Handicap Changes"):
@@ -486,7 +486,7 @@ with tab5:
 # Tab 6: Team Leaderboard
 # ────────────────────────────────────────────────
 with tab6:
-    st.header("Team Leaderboard (Irish Rumble)")
+    st.header("Team Leaderboard (Irish Rumble")
     if 'team_df' in st.session_state and st.session_state.team_df is not None:
         st.dataframe(st.session_state.team_df, width="stretch", hide_index=True)
     else:
