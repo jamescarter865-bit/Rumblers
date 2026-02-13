@@ -340,9 +340,6 @@ with tab2:
                 if col2.button("Cancel"):
                     st.rerun()
 
-# ────────────────────────────────────────────────
-# Tab 3: Competition Setup – handicap now saves correctly
-# ────────────────────────────────────────────────
 with tab3:
     st.header("Competition Setup")
 
@@ -360,6 +357,7 @@ with tab3:
     if 'course' not in st.session_state:
         st.info("Load a course to continue")
 
+    # Initialize golfers if not present
     if 'golfers' not in st.session_state:
         st.session_state.golfers = []
 
@@ -370,21 +368,24 @@ with tab3:
     team_input = st.text_input("Team name")
     if st.button("Add selected to team"):
         for name in selected:
-            hc = players_db[players_db['Name'] == name]['Handicap'].values[0]
-            st.session_state.golfers.append({
-                'Name': name,
-                'Handicap': hc,
-                'Team': team_input,
-                'scores': [0]*18
-            })
-        st.success("Added")
+            # Only add if not already in the competition
+            if name not in [g['Name'] for g in st.session_state.golfers]:
+                hc = players_db[players_db['Name'] == name]['Handicap'].values[0]
+                st.session_state.golfers.append({
+                    'Name': name,
+                    'Handicap': hc,
+                    'Team': team_input,
+                    'scores': [0]*18
+                })
+        st.success(f"Added {len(selected)} player(s)")
         st.rerun()
 
     if st.session_state.golfers:
         df_comp = pd.DataFrame(st.session_state.golfers)
 
-        st.subheader("Current Players in Competition (edit handicaps below)")
+        st.subheader("Current Players in Competition (edit handicaps / teams below)")
 
+        # Use a persistent key so edits survive reruns until explicitly saved
         edited_comp = st.data_editor(
             df_comp,
             column_config={
@@ -394,26 +395,21 @@ with tab3:
             },
             hide_index=True,
             width="stretch",
-            key="comp_editor"  # Key ensures state persists across reruns
+            key="comp_editor_persistent"  # This key makes edits "sticky" across reruns
         )
 
         if st.button("Save Team / Handicap Changes"):
-            with st.popover("Confirm changes"):
-                st.write("Are you sure?")
-                col1, col2 = st.columns(2)
-                if col1.button("Yes – Save"):
-                    st.session_state.golfers = edited_comp.to_dict('records')
-                    st.success("Team and handicap changes saved!")
-                    st.rerun()
-                if col2.button("Cancel"):
-                    st.rerun()
+            # Only update session state when user explicitly saves
+            st.session_state.golfers = edited_comp.to_dict('records')
+            st.success("Team and handicap changes saved!")
+            st.rerun()
 
         remove_names = st.multiselect("Remove players from competition", df_comp['Name'].tolist(), key="remove_select")
         if st.button("Remove selected players"):
             st.session_state.golfers = [g for g in st.session_state.golfers if g['Name'] not in remove_names]
             st.success(f"Removed {len(remove_names)} player(s)")
             st.rerun()
-
+            
 # ────────────────────────────────────────────────
 # Tab 4: Enter Scores
 # ────────────────────────────────────────────────
