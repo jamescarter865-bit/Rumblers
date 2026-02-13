@@ -20,6 +20,12 @@ hide_st_style = """
 """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
+# Logo (small, top-right corner on every page)
+logo_url = "https://i.imgur.com/YourLogoHere.png"  # ← Replace with your actual image URL
+col_logo1, col_logo2 = st.columns([6, 1])
+with col_logo2:
+    st.image(logo_url, width=120)
+
 # ────────────────────────────────────────────────
 # Database setup
 # ────────────────────────────────────────────────
@@ -157,11 +163,11 @@ def compute_results():
         ascending=[False]*5
     )
 
-    # Add position (1st, 2nd, etc.) to the dataframe
+    # Add position (1st, 2nd, 3rd, etc.)
     ind_df['Position'] = ind_df.index + 1
     ind_df['Position'] = ind_df['Position'].apply(lambda x: f"{x}{'st' if x==1 else 'nd' if x==2 else 'rd' if x==3 else 'th'}")
 
-    # Reorder columns so Position is first
+    # Reorder columns
     ind_df = ind_df[['Position', 'Name', 'Team', 'Total Points', 'Back 9', 'Back 6', 'Back 3', 'Back 1']]
 
     # Team Irish Rumble
@@ -249,7 +255,7 @@ with tab1:
             for _, row in edited.iterrows():
                 if not row['Delete']:
                     save_player(row['Name'], int(row['Handicap']))
-            st.success("Player changes saved")
+            st.success("Saved")
             st.rerun()
 
         to_del = edited[edited['Delete']]['Name'].tolist()
@@ -340,6 +346,9 @@ with tab2:
                 if col2.button("Cancel"):
                     st.rerun()
 
+# ────────────────────────────────────────────────
+# Tab 3: Competition Setup
+# ────────────────────────────────────────────────
 with tab3:
     st.header("Competition Setup")
 
@@ -357,7 +366,6 @@ with tab3:
     if 'course' not in st.session_state:
         st.info("Load a course to continue")
 
-    # Initialize golfers if not present
     if 'golfers' not in st.session_state:
         st.session_state.golfers = []
 
@@ -368,24 +376,21 @@ with tab3:
     team_input = st.text_input("Team name")
     if st.button("Add selected to team"):
         for name in selected:
-            # Only add if not already in the competition
-            if name not in [g['Name'] for g in st.session_state.golfers]:
-                hc = players_db[players_db['Name'] == name]['Handicap'].values[0]
-                st.session_state.golfers.append({
-                    'Name': name,
-                    'Handicap': hc,
-                    'Team': team_input,
-                    'scores': [0]*18
-                })
-        st.success(f"Added {len(selected)} player(s)")
+            hc = players_db[players_db['Name'] == name]['Handicap'].values[0]
+            st.session_state.golfers.append({
+                'Name': name,
+                'Handicap': hc,
+                'Team': team_input,
+                'scores': [0]*18
+            })
+        st.success("Added")
         st.rerun()
 
     if st.session_state.golfers:
         df_comp = pd.DataFrame(st.session_state.golfers)
 
-        st.subheader("Current Players in Competition (edit handicaps / teams below)")
+        st.subheader("Current Players in Competition")
 
-        # Use a persistent key so edits survive reruns until explicitly saved
         edited_comp = st.data_editor(
             df_comp,
             column_config={
@@ -395,21 +400,26 @@ with tab3:
             },
             hide_index=True,
             width="stretch",
-            key="comp_editor_persistent"  # This key makes edits "sticky" across reruns
+            key="comp_editor"
         )
 
         if st.button("Save Team / Handicap Changes"):
-            # Only update session state when user explicitly saves
-            st.session_state.golfers = edited_comp.to_dict('records')
-            st.success("Team and handicap changes saved!")
-            st.rerun()
+            with st.popover("Confirm changes"):
+                st.write("Are you sure?")
+                col1, col2 = st.columns(2)
+                if col1.button("Yes – Save"):
+                    st.session_state.golfers = edited_comp.to_dict('records')
+                    st.success("Changes saved")
+                    st.rerun()
+                if col2.button("Cancel"):
+                    st.rerun()
 
         remove_names = st.multiselect("Remove players from competition", df_comp['Name'].tolist(), key="remove_select")
         if st.button("Remove selected players"):
             st.session_state.golfers = [g for g in st.session_state.golfers if g['Name'] not in remove_names]
             st.success(f"Removed {len(remove_names)} player(s)")
             st.rerun()
-            
+
 # ────────────────────────────────────────────────
 # Tab 4: Enter Scores
 # ────────────────────────────────────────────────
@@ -473,7 +483,7 @@ with tab4:
             st.markdown("---")
 
 # ────────────────────────────────────────────────
-# Tab 5: Individual Leaderboard – with position
+# Tab 5: Individual Leaderboard
 # ────────────────────────────────────────────────
 with tab5:
     st.header("Individual Leaderboard")
