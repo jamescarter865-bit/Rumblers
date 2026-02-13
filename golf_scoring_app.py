@@ -20,12 +20,6 @@ hide_st_style = """
 """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
-# Logo (small, top-right corner on every page)
-logo_url = "https://i.imgur.com/YourLogoHere.png"  # ← Replace with your actual image URL
-col_logo1, col_logo2 = st.columns([6, 1])
-with col_logo2:
-    st.image(logo_url, width=120)
-
 # ────────────────────────────────────────────────
 # Database setup
 # ────────────────────────────────────────────────
@@ -167,7 +161,6 @@ def compute_results():
     ind_df['Position'] = ind_df.index + 1
     ind_df['Position'] = ind_df['Position'].apply(lambda x: f"{x}{'st' if x==1 else 'nd' if x==2 else 'rd' if x==3 else 'th'}")
 
-    # Reorder columns
     ind_df = ind_df[['Position', 'Name', 'Team', 'Total Points', 'Back 9', 'Back 6', 'Back 3', 'Back 1']]
 
     # Team Irish Rumble
@@ -347,7 +340,7 @@ with tab2:
                     st.rerun()
 
 # ────────────────────────────────────────────────
-# Tab 3: Competition Setup
+# Tab 3: Competition Setup – fixed multi-team handicap persistence
 # ────────────────────────────────────────────────
 with tab3:
     st.header("Competition Setup")
@@ -366,6 +359,7 @@ with tab3:
     if 'course' not in st.session_state:
         st.info("Load a course to continue")
 
+    # Persistent golfers list
     if 'golfers' not in st.session_state:
         st.session_state.golfers = []
 
@@ -383,13 +377,13 @@ with tab3:
                 'Team': team_input,
                 'scores': [0]*18
             })
-        st.success("Added")
+        st.success(f"Added {len(selected)} player(s)")
         st.rerun()
 
     if st.session_state.golfers:
         df_comp = pd.DataFrame(st.session_state.golfers)
 
-        st.subheader("Current Players in Competition")
+        st.subheader("Current Players in Competition (edit handicaps / teams below)")
 
         edited_comp = st.data_editor(
             df_comp,
@@ -400,24 +394,26 @@ with tab3:
             },
             hide_index=True,
             width="stretch",
-            key="comp_editor"
+            key="comp_editor_persistent_key"  # Ensures edits survive adding new players
         )
 
         if st.button("Save Team / Handicap Changes"):
-            with st.popover("Confirm changes"):
-                st.write("Are you sure?")
-                col1, col2 = st.columns(2)
-                if col1.button("Yes – Save"):
-                    st.session_state.golfers = edited_comp.to_dict('records')
-                    st.success("Changes saved")
-                    st.rerun()
-                if col2.button("Cancel"):
-                    st.rerun()
+            st.session_state.golfers = edited_comp.to_dict('records')
+            st.success("Team and handicap changes saved!")
+            st.rerun()
 
-        remove_names = st.multiselect("Remove players from competition", df_comp['Name'].tolist(), key="remove_select")
-        if st.button("Remove selected players"):
-            st.session_state.golfers = [g for g in st.session_state.golfers if g['Name'] not in remove_names]
-            st.success(f"Removed {len(remove_names)} player(s)")
+        remove_names = st.multiselect("Remove player instances", 
+                                      [f"{row['Name']} ({row['Team']})" for _, row in df_comp.iterrows()],
+                                      key="remove_select")
+        if st.button("Remove selected instances"):
+            to_remove = set(remove_names)
+            new_golfers = []
+            for g in st.session_state.golfers:
+                ident = f"{g['Name']} ({g['Team']})"
+                if ident not in to_remove:
+                    new_golfers.append(g)
+            st.session_state.golfers = new_golfers
+            st.success(f"Removed {len(to_remove)} instance(s)")
             st.rerun()
 
 # ────────────────────────────────────────────────
@@ -483,7 +479,7 @@ with tab4:
             st.markdown("---")
 
 # ────────────────────────────────────────────────
-# Tab 5: Individual Leaderboard
+# Tab 5: Individual Leaderboard (with position)
 # ────────────────────────────────────────────────
 with tab5:
     st.header("Individual Leaderboard")
