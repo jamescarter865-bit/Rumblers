@@ -41,6 +41,14 @@ cursor.execute('''
         stroke_indices TEXT
     )
 ''')
+
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS competitions (
+        name TEXT PRIMARY KEY,
+        course_name TEXT,
+        golfers TEXT
+    )
+''')
 conn.commit()
 
 def save_player(name, handicap):
@@ -81,6 +89,28 @@ def load_all_course_names():
 
 def delete_course(name):
     cursor.execute('DELETE FROM courses WHERE name = ?', (name,))
+    conn.commit()
+
+def save_competition(name, course_name, golfers):
+    cursor.execute('''
+        INSERT OR REPLACE INTO competitions (name, course_name, golfers)
+        VALUES (?, ?, ?)
+    ''', (name, course_name, json.dumps(golfers)))
+    conn.commit()
+
+def load_competition(name):
+    cursor.execute('SELECT course_name, golfers FROM competitions WHERE name = ?', (name,))
+    row = cursor.fetchone()
+    if row:
+        return row[0], json.loads(row[1])
+    return None, None
+
+def load_all_competition_names():
+    cursor.execute('SELECT name FROM competitions ORDER BY name')
+    return [row[0] for row in cursor.fetchall()]
+
+def delete_competition(name):
+    cursor.execute('DELETE FROM competitions WHERE name = ?', (name,))
     conn.commit()
 
 # ────────────────────────────────────────────────
@@ -261,7 +291,7 @@ with tab1:
             st.rerun()
 
 # ────────────────────────────────────────────────
-# Tab 2: Course Setup – create, edit, delete
+# Tab 2: Course Setup
 # ────────────────────────────────────────────────
 with tab2:
     st.header("Course Setup")
@@ -334,7 +364,7 @@ with tab2:
                     st.rerun()
 
 # ────────────────────────────────────────────────
-# Tab 3: Competition Setup – fixed handicap update
+# Tab 3: Competition Setup – fixed handicap saving
 # ────────────────────────────────────────────────
 with tab3:
     st.header("Competition Setup")
@@ -387,7 +417,7 @@ with tab3:
             },
             hide_index=True,
             width="stretch",
-            key="comp_editor_key"  # Added key for persistence
+            key="comp_editor"
         )
 
         if st.button("Save Team / Handicap Changes"):
