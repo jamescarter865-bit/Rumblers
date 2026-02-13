@@ -41,14 +41,6 @@ cursor.execute('''
         stroke_indices TEXT
     )
 ''')
-
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS competitions (
-        name TEXT PRIMARY KEY,
-        course_name TEXT,
-        golfers TEXT
-    )
-''')
 conn.commit()
 
 def save_player(name, handicap):
@@ -89,28 +81,6 @@ def load_all_course_names():
 
 def delete_course(name):
     cursor.execute('DELETE FROM courses WHERE name = ?', (name,))
-    conn.commit()
-
-def save_competition(name, course_name, golfers):
-    cursor.execute('''
-        INSERT OR REPLACE INTO competitions (name, course_name, golfers)
-        VALUES (?, ?, ?)
-    ''', (name, course_name, json.dumps(golfers)))
-    conn.commit()
-
-def load_competition(name):
-    cursor.execute('SELECT course_name, golfers FROM competitions WHERE name = ?', (name,))
-    row = cursor.fetchone()
-    if row:
-        return row[0], json.loads(row[1])
-    return None, None
-
-def load_all_competition_names():
-    cursor.execute('SELECT name FROM competitions ORDER BY name')
-    return [row[0] for row in cursor.fetchall()]
-
-def delete_competition(name):
-    cursor.execute('DELETE FROM competitions WHERE name = ?', (name,))
     conn.commit()
 
 # ────────────────────────────────────────────────
@@ -186,6 +156,13 @@ def compute_results():
         ['Total Points', 'Back 9', 'Back 6', 'Back 3', 'Back 1'],
         ascending=[False]*5
     )
+
+    # Add position (1st, 2nd, etc.) to the dataframe
+    ind_df['Position'] = ind_df.index + 1
+    ind_df['Position'] = ind_df['Position'].apply(lambda x: f"{x}{'st' if x==1 else 'nd' if x==2 else 'rd' if x==3 else 'th'}")
+
+    # Reorder columns so Position is first
+    ind_df = ind_df[['Position', 'Name', 'Team', 'Total Points', 'Back 9', 'Back 6', 'Back 3', 'Back 1']]
 
     # Team Irish Rumble
     team_dict = {}
@@ -272,7 +249,7 @@ with tab1:
             for _, row in edited.iterrows():
                 if not row['Delete']:
                     save_player(row['Name'], int(row['Handicap']))
-            st.success("Saved")
+            st.success("Player changes saved")
             st.rerun()
 
         to_del = edited[edited['Delete']]['Name'].tolist()
@@ -364,7 +341,7 @@ with tab2:
                     st.rerun()
 
 # ────────────────────────────────────────────────
-# Tab 3: Competition Setup – fixed handicap saving
+# Tab 3: Competition Setup – handicap now saves correctly
 # ────────────────────────────────────────────────
 with tab3:
     st.header("Competition Setup")
@@ -406,7 +383,7 @@ with tab3:
     if st.session_state.golfers:
         df_comp = pd.DataFrame(st.session_state.golfers)
 
-        st.subheader("Current Players in Competition")
+        st.subheader("Current Players in Competition (edit handicaps below)")
 
         edited_comp = st.data_editor(
             df_comp,
@@ -417,7 +394,7 @@ with tab3:
             },
             hide_index=True,
             width="stretch",
-            key="comp_editor"
+            key="comp_editor"  # Key ensures state persists across reruns
         )
 
         if st.button("Save Team / Handicap Changes"):
@@ -426,7 +403,7 @@ with tab3:
                 col1, col2 = st.columns(2)
                 if col1.button("Yes – Save"):
                     st.session_state.golfers = edited_comp.to_dict('records')
-                    st.success("Changes saved")
+                    st.success("Team and handicap changes saved!")
                     st.rerun()
                 if col2.button("Cancel"):
                     st.rerun()
@@ -500,7 +477,7 @@ with tab4:
             st.markdown("---")
 
 # ────────────────────────────────────────────────
-# Tab 5: Individual Leaderboard
+# Tab 5: Individual Leaderboard – with position
 # ────────────────────────────────────────────────
 with tab5:
     st.header("Individual Leaderboard")
@@ -516,7 +493,7 @@ with tab5:
 # Tab 6: Team Leaderboard
 # ────────────────────────────────────────────────
 with tab6:
-    st.header("Team Leaderboard (Irish Rumble")
+    st.header("Team Leaderboard (Irish Rumble)")
     if 'team_df' in st.session_state and st.session_state.team_df is not None:
         st.dataframe(st.session_state.team_df, width="stretch", hide_index=True)
     else:
