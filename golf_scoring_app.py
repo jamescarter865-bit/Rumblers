@@ -21,7 +21,7 @@ hide_st_style = """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
 # ────────────────────────────────────────────────
-# Database setup
+# Database setup – added competitions table
 # ────────────────────────────────────────────────
 DB_FILE = 'golf_db.db'
 conn = sqlite3.connect(DB_FILE, check_same_thread=False)
@@ -39,6 +39,15 @@ cursor.execute('''
         name TEXT PRIMARY KEY,
         pars TEXT,
         stroke_indices TEXT
+    )
+''')
+
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS competitions (
+        name TEXT PRIMARY KEY,
+        course_name TEXT,
+        golfers_json TEXT,
+        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
     )
 ''')
 conn.commit()
@@ -84,6 +93,34 @@ def delete_course(name):
     conn.commit()
 
 # ────────────────────────────────────────────────
+# Competition persistence functions
+# ────────────────────────────────────────────────
+def save_competition(name, course_name, golfers):
+    golfers_json = json.dumps(golfers)
+    cursor.execute('''
+        INSERT OR REPLACE INTO competitions (name, course_name, golfers_json)
+        VALUES (?, ?, ?)
+    ''', (name, course_name, golfers_json))
+    conn.commit()
+
+def load_competition(name):
+    cursor.execute('SELECT course_name, golfers_json FROM competitions WHERE name = ?', (name,))
+    row = cursor.fetchone()
+    if row:
+        course_name, golfers_json = row
+        golfers = json.loads(golfers_json)
+        return course_name, golfers
+    return None, None
+
+def load_all_competition_names():
+    cursor.execute('SELECT name FROM competitions ORDER BY last_updated DESC')
+    return [row[0] for row in cursor.fetchall()]
+
+def delete_competition(name):
+    cursor.execute('DELETE FROM competitions WHERE name = ?', (name,))
+    conn.commit()
+
+# ────────────────────────────────────────────────
 # Scoring functions
 # ────────────────────────────────────────────────
 def stableford_points(gross_score, par, strokes_received):
@@ -103,7 +140,7 @@ def strokes_on_hole(handicap, stroke_index):
     return full + 1 if stroke_index <= rem else full
 
 # ────────────────────────────────────────────────
-# Calculation function – with proper leaderboard ranking
+# Calculation function
 # ────────────────────────────────────────────────
 def compute_results():
     if 'course' not in st.session_state:
@@ -166,7 +203,7 @@ def compute_results():
     for i, row in ind_df.iterrows():
         current_score = row['Total Points']
         if prev_score is not None and current_score == prev_score:
-            ranks.append(current_rank)  # same rank for ties
+            ranks.append(current_rank)
         else:
             current_rank = i + 1
             ranks.append(current_rank)
@@ -174,7 +211,6 @@ def compute_results():
 
     ind_df['Rank'] = ranks
 
-    # Reorder columns
     ind_df = ind_df[['Rank', 'Name', 'Team', 'Total Points', 'Back 9', 'Back 6', 'Back 3', 'Back 1']]
 
     # Team Irish Rumble
@@ -227,9 +263,10 @@ def compute_results():
 # ────────────────────────────────────────────────
 # Tabs
 # ────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "Manage Players", "Course Setup", "Competition Setup",
-    "Enter Scores", "Individual Leaderboard", "Team Leaderboard", "Player Details"
+    "Enter Scores", "Individual Leaderboard", "Team Leaderboard", "Player Details",
+    "Load / Manage Competitions"
 ])
 
 # ────────────────────────────────────────────────
@@ -490,7 +527,7 @@ with tab4:
             st.markdown("---")
 
 # ────────────────────────────────────────────────
-# Tab 5: Individual Leaderboard – proper ranking
+# Tab 5: Individual Leaderboard
 # ────────────────────────────────────────────────
 with tab5:
     st.header("Individual Leaderboard")
@@ -579,8 +616,64 @@ with tab7:
     else:
         st.info("Calculate results first")
 
+# ────────────────────────────────────────────────
+# Tab 8: Load / Manage Competitions (new tab for persistence)
+# ────────────────────────────────────────────────
+with tab8:
+    st.header("Load / Manage Saved Competitions")
+
+    comp_names = load_all_competition_names()
+
+    if not comp_names:
+        st.info("No saved competitions yet. Set up one in Competition Setup and save it below.")
+    else:
+        st.subheader("Saved Competitions")
+        for c in comp_names:
+            col1, col2, col3 = st.columns([4, 1, 1])
+            col1.write(c)
+            if col2.button("Load", key=f"load_{c}"):
+                course_name, golfers = load_competition(c)
+                if course_name and golfers:
+                    loaded_course = load_course(course_name)
+                    if loaded_course is not None:
+                        st.session_state.course = loaded_course
+                        st.session_state.golfers = golfers
+                        st.success(f"Loaded '{c}' – course: {course_name}")
+                        st.rerun()
+                    else:
+                        st.error("Course not found")
+                else:
+                    st.error("Competition not found")
+            if col3.button("Delete", key=f"del_comp_{c}", type="primary"):
+                with st.popover("Confirm"):
+                    st.write(f"Delete '{c}'?")
+                    if st.button("Yes"):
+                        delete_competition(c)
+                        st.success(f"Deleted '{c}'")
+                        st.rerun()
+
+    st.subheader("Save Current Competition")
+    if 'golfers' not in st.session_state or not st.session_state.golfers:
+        st.info("No active competition to save. Add players first.")
+    elif 'course' not in st.session_state:
+        st.info("Load a course first.")
+    else:
+        save_name = st.text_input("Competition Name", value="My Competition")
+        if st.button("Save Competition"):
+            if not save_name.strip():
+                st.error("Enter a name")
+            else:
+                course_name = [c for c in load_all_course_names() if load_course(c).equals(st.session_state.course)]
+                if not course_name:
+                    st.error("Current course not found in database")
+                else:
+                    course_name = course_name[0]
+                    save_competition(save_name.strip(), course_name, st.session_state.golfers)
+                    st.success(f"Competition '{save_name}' saved!")
+                    st.rerun()
+
 # Reset
-if st.button("Reset Competition (keeps database)"):
+if st.button("Reset Current Competition (keeps database)"):
     for k in ['golfers', 'ind_df', 'team_df', 'details', 'course', 'course_temp', 'selected_course']:
         st.session_state.pop(k, None)
     st.rerun()
